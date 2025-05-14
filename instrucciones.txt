@@ -1,0 +1,25 @@
+Buscar por ơtulo o artista: se pedirá al usuario que ingrese texto representando el ơtulo
+de la canción o artista que desee buscar. Tener en cuenta que la entrada puede estar
+incompleta (por ejemplo, las primeras letras del ơtulo). También considerar que la
+búsqueda debe ser independiente de si existen mayúsculas o minúsculas (case
+insensitive). Ordenar por cantidad de reproducciones de manera descendente. El
+resultado debe incluir solo el nombre del artista, el nombre de la canción y la duración
+en formato HH:MM:SS.
+
+Artista: mostrar los 10 temas con mayor reproducciones de un artista especificado, la
+información que se debe mostrar en cada tema es: nombre del artista, nombre del tema,
+duración (formato HH:MM:SS), cantidad de reproducciones (en millones).
+
+Insertar un registro: esto se debe poder realizar de dos maneras, desde un archivo .csv,
+pudiendo insertar varios registros en modo batch o de manera manual desde la terminal.
+Los valores que se deben ingresar son: artista, track, album, Uri Spotify, duración (se
+debe convertir a milisegundos), url de Spotify y url de youtube, likes y views (no debería
+tener más likes que views). Se debe validar mediante expresiones regulares los datos
+ingresados.
+
+Mostrar álbumes: Dado un artista mostrar la cantidad de álbumes que tiene y por cada
+álbum especificar el nombre, la canƟdad de canciones, y la duración total del mismo.
+Cada grupo deberá realizar una presentación (no más de 5 diapositivas) explicando el
+programa, también deberán justificar la utilización de las herramientas (Ej: librerías
+externas). Luego deberán mostrar brevemente la arquitectura del código y el
+funcionamiento.
