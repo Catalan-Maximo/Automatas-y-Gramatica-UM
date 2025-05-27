@@ -1,9 +1,10 @@
 import csv
 import re
 import os
+import pathlib
 from datetime import timedelta
 from dataclasses import dataclass
-import pathlib
+from urllib.parse import urlparse
 
 @dataclass
 class SongDto:
@@ -19,7 +20,7 @@ class SongDto:
     views: int = 0
 
 def convert_duration(ms: int) -> str:
-    """Convert duration from milliseconds to HH:MM:SS format"""
+    """Convierte la duración de milisegundos al formato HH:MM:SS"""
     seconds = int(float(ms)) // 1000
     return str(timedelta(seconds=seconds))
 
@@ -65,20 +66,20 @@ def parse_csv() -> list:
 def search_songs() -> None:
     songs = parse_csv()
     
-    print("\nEnter search term for title or artist (press Enter with no text to exit):")
+    print("\nIngresa término de búsqueda para título o artista (presiona Enter sin texto para salir):")
     while True:
         search_term = input("> ").strip()
         
         if not search_term:
             break
             
-        # Search using case-insensitive comparison for better reliability
+        # Búsqueda usando comparación sin distinción de mayúsculas para mejor confiabilidad
         matches = [
             song for song in songs 
             if search_term.lower() in song.artist.lower() or search_term.lower() in song.track.lower()
         ]
         
-        # Sort by views count (descending) if available, otherwise by stream
+        # Ordenar por conteo de vistas (descendente) si está disponible, de lo contrario por streams
         matches.sort(key=lambda x: (x.views if x.views > 0 else x.stream), reverse=True)
         
         if matches:
@@ -101,22 +102,22 @@ def search_songs() -> None:
 def artist_top_songs() -> None:
     songs = parse_csv()
     
-    artist_name = input("\nEnter artist name: ").strip()
+    artist_name = input("\nIngresa nombre del artista: ").strip()
 
     artist_songs = [song for song in songs if artist_name.lower() in song.artist.lower()]
     
-    # Sort by stream count (descending)
+    # Ordenar por conteo de streams (descendente)
     artist_songs.sort(key=lambda x: (x.views if x.views > 0 else x.stream), reverse=True)
     
-    # Get top 10 songs
-    top_songs = artist_songs[:10]
+    # Obtener top 5 canciones
+    top_songs = artist_songs[:5]
     
     if top_songs:
-        print(f"\nTop 10 songs by {artist_name}:")
+        print(f"\nTop 5 canciones de {artist_name}:")
         for i, song in enumerate(top_songs, 1):
             print(f"\nTop {i}:")
-            print(f"Artist: {song.artist}")
-            print(f"Duration: {convert_duration(song.duration_ms)}")
+            print(f"Artista: {song.artist}")
+            print(f"Duración: {convert_duration(song.duration_ms)}")
             if song.views > 0:
                 views_m = song.views / 1_000_000
                 print(f"Reproducciones: {views_m:.1f}M vistas")
@@ -125,110 +126,208 @@ def artist_top_songs() -> None:
                 print(f"Reproducciones: {stream_m:.1f}M streams")
             print("-" * 50)
     else:
-        print(f"No songs found for artist '{artist_name}'.")
+        print(f"No se encontraron canciones para el artista '{artist_name}'.")
 
-def validate_song_data(data: dict) -> bool:
-    """Validate song data using regex patterns"""
-    # Basic validation patterns
+def spotify_url_to_uri(url):
+    try:
+        # Parsear la URL
+        parsed_url = urlparse(url)
+       
+        # Extraer el path y dividirlo
+        path_parts = parsed_url.path.strip('/').split('/')
+       
+        # Buscar el tipo de contenido (track, album, playlist, etc.) y el ID
+        content_type = None
+        content_id = None
+       
+        for i, part in enumerate(path_parts):
+            if part in ['track', 'album', 'playlist', 'artist', 'show', 'episode']:
+                content_type = part
+                # El ID debería estar en la siguiente posición
+                if i + 1 < len(path_parts):
+                    content_id = path_parts[i + 1]
+                break
+       
+        if not content_type or not content_id:
+            raise ValueError("No se pudo extraer el tipo de contenido o ID de la URL")
+       
+        # Crear la URI
+        uri = f"spotify:{content_type}:{content_id}"
+        return uri
+       
+    except Exception as e:
+        raise ValueError(f"Error al procesar la URL: {str(e)}")
+
+def validate_song_data(data: dict):
+    # Patrones básicos de validación
     patterns = {
         'artist': r'^[A-Za-z0-9\s\.\,\-\_\'\&\(\)]+$',
         'track': r'^[A-Za-z0-9\s\.\,\-\_\'\&\(\)]+$',
         'album': r'^[A-Za-z0-9\s\.\,\-\_\'\&\(\)]+$',
-        'spotify_uri': r'^spotify:track:[a-zA-Z0-9]{22}$',
+        'spotify_uri': r'^spotify:(track|album|playlist|artist|show|episode):[a-zA-Z0-9]{22}$',
         'duration_ms': r'^\d+$',
-        'spotify_url': r'^https://open\.spotify\.com/artist/[a-zA-Z0-9]{22}(\?si=[a-zA-Z0-9]+)?$',
+        'spotify_url': r'^https://open\.spotify\.com/(intl-[a-z]{2}/)?((track|album|playlist|artist|show|episode)/[a-zA-Z0-9]{22})(\?.*)?$',
         'youtube_url': r'^https://(www\.)?(youtube\.com/watch\?v=|youtu\.be/)[a-zA-Z0-9_\-]{11}.*$',
         'likes': r'^\d+(\.\d+)?$',
         'views': r'^\d+(\.\d+)?$'
     }
-    
+
+    # Validar todos los campos
     for field, pattern in patterns.items():
         if field in data and data[field]:
             if not re.match(pattern, str(data[field])):
-                print(f"Invalid format for {field}: {data[field]}")
+                print(f"Formato inválido para {field}: {data[field]}")
                 return False
     
-    # Validate likes shouldn't be more than views
-    if 'likes' in data and 'views' in data:
-        if int(data['likes']) > int(data['views']):
-            print("Error: Likes cannot be more than views.")
+    # Validar que los likes no sean más que las views
+    if 'likes' in data and 'views' in data and data['likes'] and data['views']:
+        try:
+            likes_val = float(data['likes'])
+            views_val = float(data['views'])
+            if likes_val > views_val:
+                print("Error: Los likes no pueden ser más que las vistas.")
+                return False
+        except ValueError:
+            print("Error: Los likes y vistas deben ser valores numéricos.")
             return False
             
     return True
 
+def get_next_index():
+    """Obtiene el siguiente índice disponible del archivo CSV"""
+    try:
+        if not os.path.exists("music.csv") or os.path.getsize("music.csv") == 0:
+            return 0
+        
+        with open("music.csv", 'r', encoding='utf-8') as file:
+            csv_reader = csv.DictReader(file)
+            last_index = -1
+            
+            for row in csv_reader:
+                index_value = row.get('Index', '').strip()
+                if index_value and index_value.isdigit():
+                    last_index = max(last_index, int(index_value))
+            
+            return last_index + 1
+    except Exception:
+        return 0
+
 def insert_song_manual() -> None:
-    """Insert a song manually from terminal input"""
-    print("\nInsert new song data:")
+    """Insertar una canción manualmente desde entrada de terminal"""
+    print("\nInsertar datos de nueva canción:")
     
     data = {}
-    data['artist'] = input("Artist: ").strip()
-    data['track'] = input("Track: ").strip()
-    data['album'] = input("Album: ").strip()
-    data['spotify_uri'] = input("Spotify URI (spotify:track:xxxx): ").strip()
+    data['artist'] = input("Artista: ").strip()
+    data['track'] = input("Canción: ").strip()
+    data['album'] = input("Álbum: ").strip()
     
-    # Get duration in format HH:MM:SS and convert to milliseconds
-    duration_input = input("Duration (HH:MM:SS): ").strip()
+    # Obtener URL de Spotify y convertir automáticamente a URI
+    spotify_url = input("URL de Spotify: ").strip()
+    data['spotify_url'] = spotify_url
+    
+    # Convertir automáticamente URL de Spotify a URI si se proporciona
+    if spotify_url:
+        try:
+            spotify_uri = spotify_url_to_uri(spotify_url)
+            data['spotify_uri'] = spotify_uri
+            print(f"URI de Spotify generado automáticamente: {spotify_uri}")
+        except ValueError as e:
+            print(f"Error convirtiendo URL de Spotify: {e}")
+            # Pedir entrada manual de URI si la conversión falla
+            data['spotify_uri'] = input("Por favor ingresa URI de Spotify manualmente (spotify:track:xxxx): ").strip()
+    else:
+        # Si no se proporciona URL, pedir URI
+        data['spotify_uri'] = input("URI de Spotify (spotify:track:xxxx): ").strip()
+    
+    # Obtener duración en formato HH:MM:SS y convertir a milisegundos
+    duration_input = input("Duración (HH:MM:SS): ").strip()
     h, m, s = map(int, duration_input.split(':'))
     data['duration_ms'] = str((h * 3600 + m * 60 + s) * 1000)
     
-    data['spotify_url'] = input("Spotify URL: ").strip()
-    data['youtube_url'] = input("YouTube URL: ").strip()
+    data['youtube_url'] = input("URL de YouTube: ").strip()
     data['likes'] = input("Likes: ").strip()
-    data['views'] = input("Views: ").strip()
+    data['views'] = input("Vistas: ").strip()
     
     if validate_song_data(data):
         try:
+            # Obtener el siguiente índice disponible
+            next_index = get_next_index()
+
             with open("music.csv", 'a', newline='', encoding='utf-8') as file:
-                fieldnames = ['Artist', 'Track', 'Album', 'Uri_spotify', 'Duration_ms', 
-                              'Url_spotify', 'Url_youtube', 'Stream', 'Likes', 'Views']
+                fieldnames = ['Index','Artist','Url_spotify','Track','Album','Album_type','Uri',
+                              'Danceability','Energy','Key','Loudness','Speechiness','Acousticness',
+                              'Instrumentalness','Liveness','Valence','Tempo','Duration_ms','Url_youtube',
+                              'Title','Channel','Views','Likes','Comments','Licensed','official_video','Stream']
                 
                 writer = csv.DictWriter(file, fieldnames=fieldnames)
                 
-                # Check if file is empty and write header if needed
+                # Verificar si el archivo está vacío y escribir encabezado si es necesario
                 if os.path.getsize("music.csv") == 0:
                     writer.writeheader()
                 
                 writer.writerow({
+                    'Index': str(next_index),
                     'Artist': data['artist'],
+                    'Url_spotify': data['spotify_url'],
                     'Track': data['track'],
                     'Album': data['album'],
-                    'Uri_spotify': data['spotify_uri'],
+                    'Album_type': '',  # Nulo
+                    'Uri': data['spotify_uri'],
+                    'Danceability': '',  # Nulo
+                    'Energy': '',  # Nulo
+                    'Key': '',  # Nulo
+                    'Loudness': '',  # Nulo
+                    'Speechiness': '',  # Nulo
+                    'Acousticness': '',  # Nulo
+                    'Instrumentalness': '',  # Nulo
+                    'Liveness': '',  # Nulo
+                    'Valence': '',  # Nulo
+                    'Tempo': '',  # Nulo
                     'Duration_ms': data['duration_ms'],
-                    'Url_spotify': data['spotify_url'],
                     'Url_youtube': data['youtube_url'],
-                    'Stream': '0',  # Default values for new songs
+                    'Title': '',  # Nulo
+                    'Channel': '',  # Nulo
+                    'Views': data['views'],
                     'Likes': data['likes'],
-                    'Views': data['views']
+                    'Comments': '',  # Nulo
+                    'Licensed': '',  # Nulo
+                    'official_video': '',  # Nulo
+                    'Stream': '0'  # Valores por defecto para nuevas canciones
                 })
                 
-            print("Song added successfully!")
+            print(f"¡Canción agregada exitosamente con Índice: {next_index}!")
         except Exception as e:
-            print(f"Error writing to file: {e}")
+            print(f"Error escribiendo al archivo: {e}")
     else:
-        print("Song data invalid. Please try again.")
+        print("Datos de canción inválidos. Por favor intenta de nuevo.")
 
 def insert_song_batch() -> None:
-    """Insert songs from a CSV file"""
-    file_path = input("\nEnter CSV file path: ").strip()
+    """Insertar canciones desde un archivo CSV"""
+    file_path = input("\nIngresa ruta del archivo CSV: ").strip()
     
     if not os.path.exists(file_path):
-        print(f"File {file_path} not found.")
+        print(f"Archivo {file_path} no encontrado.")
         return
         
     try:
         valid_records = 0
         invalid_records = 0
+
+        # Obtener índice inicial
+        current_index = get_next_index()
         
         with open(file_path, 'r', encoding='utf-8') as input_file:
             csv_reader = csv.DictReader(input_file)
             
             with open("music.csv", 'a', newline='', encoding='utf-8') as output_file:
-                fieldnames = ['Artist', 'Track', 'Album', 'Uri_spotify', 'Duration_ms', 
-                              'Url_spotify', 'Url_youtube', 'Stream', 'Likes', 'Views']
+                fieldnames = ['Index','Artist','Url_spotify','Track','Album','Album_type','Uri',
+                            'Danceability','Energy','Key','Loudness','Speechiness','Acousticness',
+                            'Instrumentalness','Liveness','Valence','Tempo','Duration_ms','Url_youtube',
+                            'Title','Channel','Views','Likes','Comments','Licensed','official_video','Stream']
                 
                 writer = csv.DictWriter(output_file, fieldnames=fieldnames)
                 
-                # Check if file is empty and write header if needed
+                # Verificar si el archivo está vacío y escribir encabezado si es necesario
                 if os.path.getsize("music.csv") == 0:
                     writer.writeheader()
                 
@@ -248,37 +347,55 @@ def insert_song_batch() -> None:
                         
                         if validate_song_data(data):
                             writer.writerow({
+                                'Index': str(current_index),
                                 'Artist': data['artist'],
+                                'Url_spotify': data['spotify_url'],
                                 'Track': data['track'],
                                 'Album': data['album'],
-                                'Uri_spotify': data['spotify_uri'],
+                                'Album_type': '',  # Nulo
+                                'Uri': data['spotify_uri'],
+                                'Danceability': '',  # Nulo
+                                'Energy': '',  # Nulo
+                                'Key': '',  # Nulo
+                                'Loudness': '',  # Nulo
+                                'Speechiness': '',  # Nulo
+                                'Acousticness': '',  # Nulo
+                                'Instrumentalness': '',  # Nulo
+                                'Liveness': '',  # Nulo
+                                'Valence': '',  # Nulo
+                                'Tempo': '',  # Nulo
                                 'Duration_ms': data['duration_ms'],
-                                'Url_spotify': data['spotify_url'],
                                 'Url_youtube': data['youtube_url'],
-                                'Stream': row.get('Stream', '0'),
+                                'Title': '',  # Nulo
+                                'Channel': '',  # Nulo
+                                'Views': data['views'],
                                 'Likes': data['likes'],
-                                'Views': data['views']
+                                'Comments': '',  # Nulo
+                                'Licensed': '',  # Nulo
+                                'official_video': '',  # Nulo
+                                'Stream': row.get('Stream', '0')
                             })
+                            current_index += 1  # Incrementar para el siguiente registro
                             valid_records += 1
                         else:
                             invalid_records += 1
                     except Exception as e:
-                        print(f"Error processing row: {e}")
+                        print(f"Error procesando fila: {e}")
                         invalid_records += 1
                         
-        print(f"Import complete: {valid_records} records imported, {invalid_records} records skipped.")
+        print(f"Importación completa: {valid_records} registros importados, {invalid_records} registros omitidos.")
     except Exception as e:
-        print(f"Error reading from file: {e}")
+        print(f"Error leyendo del archivo: {e}")
 
 def insert_song() -> None:
-    """Insert song menu"""
+    """Menú de insertar canción"""
     while True:
-        print("\nInsert Song Menu:")
-        print("1. Insert manually")
-        print("2. Import from CSV file")
-        print("3. Return to main menu")
+        print("\nMenú Insertar Canción:")
+        print("1. Insertar manualmente")
+        print("2. Importar desde archivo CSV")
+        print("3. Regresar al menú principal")
         
-        option = input("\nSelect an option: ").strip()
+        option = input("\nSelecciona una opción: ").strip()
         
         if option == "1":
             insert_song_manual()
@@ -287,23 +404,23 @@ def insert_song() -> None:
         elif option == "3":
             break
         else:
-            print("Invalid option")
+            print("Opción inválida")
 
 def show_albums() -> None:
-    """Show albums for a specific artist"""
+    """Mostrar álbumes para un artista específico"""
     songs = parse_csv()
     
-    artist_name = input("\nEnter artist name: ").strip()
+    artist_name = input("\nIngresa nombre del artista: ").strip()
     
-    # Filter songs by artist (case insensitive)
+    # Filtrar canciones por artista (sin distinción de mayúsculas)
     pattern = re.compile(artist_name, re.IGNORECASE)
     artist_songs = [song for song in songs if pattern.search(song.artist)]
     
     if not artist_songs:
-        print(f"No songs found for artist '{artist_name}'.")
+        print(f"No se encontraron canciones para el artista '{artist_name}'.")
         return
     
-    # Group songs by album
+    # Agrupar canciones por álbum
     albums = {}
     for song in artist_songs:
         if song.album not in albums:
@@ -314,27 +431,31 @@ def show_albums() -> None:
         albums[song.album]['songs'].append(song)
         albums[song.album]['total_duration'] += song.duration_ms
     
-    print(f"\nFound {len(albums)} albums for {artist_name}:")
+    print(f"\nSe encontraron {len(albums)} álbumes para {artist_name}:")
     
     for album_name, album_data in albums.items():
         song_count = len(album_data['songs'])
         total_duration = convert_duration(album_data['total_duration'])
         
-        print(f"Album: {album_name}")
-        print(f"Songs: {song_count}")
-        print(f"Total Duration: {total_duration}")
+        print(f"Álbum: {album_name}")
+        print(f"Canciones: {song_count}")
+        print(f"Duración Total: {total_duration}")
         print("-" * 50)
 
 def main():
+    """Menú principal integrado"""
     while True:
-        print("\nMenu:")
-        print("1. Search by title or artist")
-        print("2. Top songs by artist")
-        print("3. Insert a record")
-        print("4. Show albums by artist")
-        print("5. Exit")
+        print("\n" + "="*50)
+        print("           GESTOR DE BASE DE DATOS MUSICAL")
+        print("="*50)
+        print("1. Buscar por título o artista")
+        print("2. Top canciones por artista")
+        print("3. Insertar una canción")
+        print("4. Mostrar álbumes por artista")
+        print("5. Salir")
+        print("="*50)
         
-        option = input("\nSelect an option: ").strip()
+        option = input("\nSelecciona una opción (1-5): ").strip()
         
         if option == "1":
             search_songs()
@@ -345,10 +466,10 @@ def main():
         elif option == "4":
             show_albums()
         elif option == "5":
-            print("Goodbye!")
+            print("\n¡Thanks for using Music Database Manager! Goodbye!")
             break
         else:
-            print("Invalid option")
+            print("\nInvalid option. Please try again.")
 
 if __name__ == "__main__":
     main()
