@@ -27,69 +27,39 @@ def parse_csv() -> list:
     songs = []
     try:
         file_path = pathlib.Path(__file__).parent.absolute() / "music.csv"
-        print(f"Intentando abrir archivo: {file_path}")
-        
-        with open(file_path, 'r', encoding='latin-1') as file:
-            # Usar coma como delimitador explícitamente
+        with open(file_path, 'r', encoding='utf-8') as file:
             csv_reader = csv.DictReader(file, delimiter=',')
-            
-            if not csv_reader.fieldnames:
-                print("Error: El archivo no tiene encabezados")
-                return []
-                
-            #print(f"Columnas encontradas: {csv_reader.fieldnames}")
             
             for row in csv_reader:
                 try:
-                    # Verificar que row sea un diccionario válido
-                    if not isinstance(row, dict):
-                        print(f"Error: Fila no es un diccionario: {row}")
-                        continue
-                        
                     # Extraer valores con manejo seguro
-                    artist = row.get('Artist', '') if row.get('Artist') else ''
-                    if isinstance(artist, str):
-                        artist = artist.strip()
-                    else:
-                        artist = str(artist)
+                    stream_value = str(row.get('Stream', '0')).strip().split(';')[0]
+                    views_value = str(row.get('Views', '0')).strip().split(';')[0]
+                    stream_count = int(float(stream_value)) if stream_value else 0
+                    views = int(float(views_value)) if views_value else 0
                     
-                    track = row.get('Track', '') if row.get('Track') else ''
-                    if isinstance(track, str):
-                        track = track.strip()
-                    else:
-                        track = str(track)
-                    
-                    # Obtener duración de manera segura
-                    duration = row.get('Duration_ms') or row.get('Duration', '0')
-                    if duration is None or duration == '':
-                        duration = '0'
-                    
-                    # Crear el objeto SongDto con valores seguros
                     song = SongDto(
-                        artist=artist,
-                        track=track,
+                        artist=str(row.get('Artist', '')).strip(),
+                        track=str(row.get('Track', '')).strip(),
                         album=str(row.get('Album', '')).strip(),
                         spotify_uri=str(row.get('Uri', '')).strip(),
-                        duration_ms=int(float(duration)),
+                        duration_ms=int(float(row.get('Duration_ms', '0'))),
                         spotify_url=str(row.get('Url_spotify', '')).strip(),
                         youtube_url=str(row.get('Url_youtube', '')).strip(),
-                        stream=int(float(row.get('Stream', '0') or '0')),
+                        stream=stream_count,
                         likes=int(float(row.get('Likes', '0') or '0')),
-                        views=int(float(row.get('Views', '0') or '0'))
+                        views=views
                     )
                     songs.append(song)
-                except (ValueError, KeyError, TypeError) as e:
-                    # print(f"Error procesando fila: {e}")
-                    # print(f"Contenido de la fila: {row}")
+                except (ValueError, KeyError, TypeError):
                     continue
                     
-            print(f"Se cargaron {len(songs)} canciones")
-            return songs
+        return songs
     except FileNotFoundError:
-        print(f"Archivo music.csv no encontrado en {file_path}")
+        print("\nError: No se encontró el archivo music.csv")
         return []
     except Exception as e:
-        print(f"Error general: {e}")
+        print(f"\nError al leer el archivo: {e}")
         return []
     
 def search_songs() -> None:
